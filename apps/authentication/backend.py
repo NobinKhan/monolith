@@ -1,14 +1,19 @@
+from uuid import UUID
+from django.conf import settings
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
 
 from rest_framework import HTTP_HEADER_ENCODING, authentication
-from apps.authentication.exceptions import TokenError, InvalidToken, AuthenticationFailed
 
-AUTH_HEADER_TYPES = api_settings.AUTH_HEADER_TYPES
-AUTH_HEADER_NAME
-AUTH_HEADER_TYPE_BYTES
+from apps.common.utils import get_object
+from apps.token.models import AccessToken
+from apps.authentication.exceptions import InvalidToken, AuthenticationFailed
 
-class JWTAuthentication(authentication.BaseAuthentication):
+AUTH_HEADER_TYPE_BYTES = {h.encode(HTTP_HEADER_ENCODING) for h in settings.AUTH_HEADER_TYPES}
+
+
+class Authentication(authentication.BaseAuthentication):
     """
     An authentication plugin that authenticates requests through a JSON web
     token provided in a request header.
@@ -30,22 +35,22 @@ class JWTAuthentication(authentication.BaseAuthentication):
         if raw_token is None:
             return None
 
-        validated_token = self.get_validated_token(raw_token)
+        validated_token_object = self.get_validated_token(raw_token)
 
-        return self.get_user(validated_token), validated_token
+        return self.get_user(validated_token_object), raw_token
 
     def authenticate_header(self, request):
         return '{} realm="{}"'.format(
-            AUTH_HEADER_TYPES[0],
+            settings.AUTH_HEADER_TYPES[0],
             self.www_authenticate_realm,
         )
 
     def get_header(self, request):
         """
-        Extracts the header containing the JSON web token from the given
+        Extracts the header containing the token from the given
         request.
         """
-        header = request.META.get(api_settings.AUTH_HEADER_NAME)
+        header = request.META.get(settings.AUTH_HEADER_NAME)
 
         if isinstance(header, str):
             # Work around django test client oddness
@@ -55,7 +60,7 @@ class JWTAuthentication(authentication.BaseAuthentication):
 
     def get_raw_token(self, header):
         """
-        Extracts an unvalidated JSON web token from the given "Authorization"
+        Extracts an unvalidated token from the given "Authorization"
         header value.
         """
         parts = header.split()
@@ -65,7 +70,7 @@ class JWTAuthentication(authentication.BaseAuthentication):
             return None
 
         if parts[0] not in AUTH_HEADER_TYPE_BYTES:
-            # Assume the header does not contain a JSON web token
+            # Assume the header does not contain a token
             return None
 
         if len(parts) != 2:
@@ -78,40 +83,35 @@ class JWTAuthentication(authentication.BaseAuthentication):
 
     def get_validated_token(self, raw_token):
         """
-        Validates an encoded JSON web token and returns a validated token
+        Validates a token and returns a validated token
         wrapper object.
         """
         messages = []
-        for AuthToken in api_settings.AUTH_TOKEN_CLASSES:
-            try:
-                return AuthToken(raw_token)
-            except TokenError as e:
-                messages.append(
-                    {
-                        "token_class": AuthToken.__name__,
-                        "token_type": AuthToken.token_type,
-                        "message": e.args[0],
-                    }
-                )
 
-        raise InvalidToken(
-            {
-                "detail": _("Given token not valid for any token type"),
-                "messages": messages,
-            }
-        )
+        try:
+            token = get_object(AccessToken, token=UUID(hex=raw_token.decode()))
+        except ValueError:
+            raise InvalidToken(
+                {
+                    "detail": _("Given token not valid for any token type"),
+                }
+            )
+        if not token or token.exp < timezone.now() or token.validity == AccessToken.TokenValidity.INVALID:
+            raise InvalidToken(
+                {
+                    "detail": _("Given token not valid for any token type"),
+                    "messages": messages,
+                }
+            )
+        return token
 
     def get_user(self, validated_token):
         """
         Attempts to find and return a user using the given validated token.
         """
-        try:
-            user_id = validated_token[api_settings.USER_ID_CLAIM]
-        except KeyError:
-            raise InvalidToken(_("Token contained no recognizable user identification"))
 
         try:
-            user = self.user_model.objects.get(**{api_settings.USER_ID_FIELD: user_id})
+            user = validated_token.user
         except self.user_model.DoesNotExist:
             raise AuthenticationFailed(_("User not found"), code="user_not_found")
 

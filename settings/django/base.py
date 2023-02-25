@@ -152,6 +152,7 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Import Other Settings
 from settings.others.drf import *
+from settings.others.token import *
 from settings.others.cors import *  # noqa
 from settings.others.sessions import *  # noqa
 
