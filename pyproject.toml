@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "rfid-inventory"
+version = "0.0.1"
+description = "Inventory System With RFID Device"
+authors = ["nobinkhan <nazrulkhan.dk@gmail.com>"]
+license = "Private"
+readme = "README.md"
+packages = [{include = "rfid_inventory"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+redis = "^4.5.1"
+Django = "^4.1.7"
+psycopg2 = "^2.9.5"
+whitenoise = "^6.3.0"
+django-filter = "^22.1"
+django-environ = "^0.9.0"
+django-cors-headers = "^3.13.0"
+djangorestframework = "^3.14.0"
+
+
+[tool.poetry.group.dev.dependencies]
+django-debug-toolbar = "^3.8.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
